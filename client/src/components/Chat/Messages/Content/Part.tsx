@@ -57,12 +57,16 @@ const Part = memo(
         </>
       );
     } else if (part.type === ContentTypes.TEXT) {
-      const text = typeof part.text === 'string' ? part.text : part.text.value;
+      const text = typeof part.text === 'string' ? part.text : part.text?.value;
 
       if (typeof text !== 'string') {
         return null;
       }
       if (part.tool_call_ids != null && !text) {
+        return null;
+      }
+      /** Skip rendering if text is only whitespace to avoid empty Container */
+      if (!isLast && text.length > 0 && /^\s*$/.test(text)) {
         return null;
       }
       return (
@@ -71,11 +75,11 @@ const Part = memo(
         </Container>
       );
     } else if (part.type === ContentTypes.THINK) {
-      const reasoning = typeof part.think === 'string' ? part.think : part.think.value;
+      const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
       if (typeof reasoning !== 'string') {
         return null;
       }
-      return <Reasoning reasoning={reasoning} />;
+      return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
     } else if (part.type === ContentTypes.TOOL_CALL) {
       const toolCall = part[ContentTypes.TOOL_CALL];
 
