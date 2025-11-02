@@ -8,7 +8,7 @@ The integration provides:
 - **OpenAI-compatible HTTP server** - Accept OpenAI API requests and proxy them to Flowise
 - **Format adapters** - Convert between OpenAI and Flowise request/response formats
 - **FlowiseClient** - Direct Python client for Flowise API
-- **Multi-flow support** - Use the OpenAI `model` field to specify which Flowise flow ID to use. Different flows can be accessed by passing different flow IDs as the model parameter.
+- **Multi-flow support** - Use the OpenAI `model` field to specify which Flowise flow ID to use. Different flows can be accessed by passing different flow IDs as the model parameter. (See `openai_compatible_server.py` lines 97-99 and 138-140 where `flow_id = deployment_name or body.get("model")`)
 
 ## Architecture
 
