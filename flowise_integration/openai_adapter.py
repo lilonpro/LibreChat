@@ -278,80 +278,25 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
 
 
 if __name__ == "__main__":
-    # Quick example usage
-    example_openai = {
-        "model": "gpt-test",
-        "prompt": "Say hello",
-        "max_tokens": 16,
-        "temperature": 0.7,
-        "n": 2,
-    }
-
-    req = openai_to_flowise(example_openai)
-    print("Flowise request:\n", req)
-
-    # Try loading a saved Flowise response for testing
-    json_path = Path(__file__).parent / "flowise_raw.json"
-    if json_path.exists():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                flowise_resp = json.load(f)
-            print(f"Loaded test Flowise response from {json_path}")
-        except Exception as e:
-            print(f"Failed to load {json_path}: {e}")
-            flowise_resp = {"outputs": ["Hello!", "Hi there!"]}
-    else:
-        # Fallback sample
-        flowise_resp = {"outputs": ["Hello!", "Hi there!"]}
-    # Build a sample OpenAI completion-style request that includes the question
-    # and conversation history from the Flowise response. This demonstrates
-    # sending both `prompt` and a `history` field (adapter will read `history`).
-    example_openai = {
-        "model": "gpt-test",
-        "prompt": flowise_resp.get("question") or flowise_resp.get("text") or "",
-        "n": 1,
-    }
-
-    # Extract chatHistory from agentFlowExecutedData nodes and attach as `history`.
-    history_msgs: List[Dict[str, Any]] = []
-    if isinstance(flowise_resp, dict):
-        afd = flowise_resp.get("agentFlowExecutedData") or []
-        for node in afd:
-            data = node.get("data", {})
-            ch = data.get("chatHistory")
-            if isinstance(ch, list):
-                for m in ch:
-                    if isinstance(m, dict) and "role" in m and "content" in m:
-                        history_msgs.append({"role": m["role"], "content": m["content"]})
-
-    if history_msgs:
-        example_openai["history"] = _merge_adjacent_history(history_msgs)
-
-    print("OpenAI completion sample request (prompt + history):\n", example_openai)
-
-    # Save the sample request to openai_raw.json for repeatable testing,
-    # then load it back and use the loaded file as the simulated request.
-    openai_json_path = Path(__file__).parent / "openai_raw.json"
+    # Load test inputs from JSON files
+    flowise_path = Path(__file__).parent / "flowise_raw.json"
+    openai_path = Path(__file__).parent / "openai_raw.json"
+    
     try:
-        with open(openai_json_path, "w", encoding="utf-8") as fo:
-            json.dump(example_openai, fo, ensure_ascii=False, indent=2)
-        print(f"Saved sample OpenAI request to {openai_json_path}")
+        with open(flowise_path, "r", encoding="utf-8") as f:
+            flowise_resp = json.load(f)
+        with open(openai_path, "r", encoding="utf-8") as f:
+            openai_req = json.load(f)
     except Exception as e:
-        print(f"Failed to save sample OpenAI request to {openai_json_path}: {e}")
+        print(f"Failed to load test files: {e}")
+        exit(1)
 
-    # Load back the saved request to ensure file-based testing is used
-    try:
-        with open(openai_json_path, "r", encoding="utf-8") as fi:
-            loaded_openai_req = json.load(fi)
-        print(f"Loaded OpenAI sample request from {openai_json_path}")
-    except Exception as e:
-        print(f"Failed to load {openai_json_path}: {e}")
-        loaded_openai_req = example_openai
+    # Convert OpenAI request → Flowise request
+    flowise_req = openai_to_flowise(openai_req)
+    print("\nOpenAI → Flowise request:")
+    print(json.dumps(flowise_req, indent=2))
 
-    # Convert the loaded OpenAI request to Flowise request shape and print
-    req = openai_to_flowise(loaded_openai_req)
-    print("Flowise request (from sample file):\n", req)
-
-    # Convert Flowise response back into an OpenAI-style response using the loaded sample
-    oa = flowise_to_openai(flowise_resp, loaded_openai_req)
-    print("OpenAI-style response:\n", oa)
+    # Convert Flowise response → OpenAI response
+    openai_resp = flowise_to_openai(flowise_resp, openai_req)
+    print("\nFlowise → OpenAI response:")
+    print(json.dumps(openai_resp, indent=2))
