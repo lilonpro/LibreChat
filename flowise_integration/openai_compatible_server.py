@@ -29,10 +29,9 @@ app = Flask(__name__)
 
 # Create a global FlowiseClient instance from environment variables.
 FLOWISE_BASE_URL = os.getenv("FLOWISE_BASE_URL")
-FLOWISE_FLOW_ID = os.getenv("FLOWISE_FLOW_ID")
 FLOWISE_API_KEY = os.getenv("FLOWISE_API_KEY")
 
-_flowise_client: Optional[FlowiseClient] = None
+_flowise_clients: Dict[str, FlowiseClient] = {}  # Cache clients by flow_id
 
 
 def _load_repo_root_env():
@@ -60,25 +59,35 @@ def _load_repo_root_env():
         pass
 
 
-def get_client() -> FlowiseClient:
-    global _flowise_client
-    if _flowise_client is not None:
-        return _flowise_client
+def get_client(flow_id: str) -> FlowiseClient:
+    """Get or create a FlowiseClient for the specified flow_id.
+    
+    Args:
+        flow_id: The Flowise flow ID to use
+        
+    Returns:
+        A FlowiseClient instance configured for the flow
+    """
+    global _flowise_clients
+    
+    # Return cached client if available
+    if flow_id in _flowise_clients:
+        return _flowise_clients[flow_id]
 
     # Allow loading repo-root .env as a fallback
     _load_repo_root_env()
 
     # refresh vars after loading root env
     base = os.getenv("FLOWISE_BASE_URL", FLOWISE_BASE_URL)
-    fid = os.getenv("FLOWISE_FLOW_ID", FLOWISE_FLOW_ID)
     key = os.getenv("FLOWISE_API_KEY", FLOWISE_API_KEY)
 
-    if not base or not fid:
-        raise RuntimeError("FLOWISE_BASE_URL and FLOWISE_FLOW_ID must be set in environment")
+    if not base:
+        raise RuntimeError("FLOWISE_BASE_URL must be set in environment")
 
     # FlowiseClient will read FLOWISE_API_KEY from env/.env if api_key is None
-    _flowise_client = FlowiseClient(base_url=base, flow_id=fid, api_key=key)
-    return _flowise_client
+    client = FlowiseClient(base_url=base, flow_id=flow_id, api_key=key)
+    _flowise_clients[flow_id] = client
+    return client
 
 
 
@@ -88,9 +97,19 @@ def health():
 
 
 @app.route("/v1/chat/completions", methods=["POST"])
-def chat_completions():
-    """Handle OpenAI ChatCompletion-style requests and return an OpenAI-compatible response."""
+@app.route("/openai/deployments/<deployment_name>/chat/completions", methods=["POST"])
+def chat_completions(deployment_name=None):
+    """Handle OpenAI ChatCompletion-style requests and return an OpenAI-compatible response.
+    
+    Supports both standard OpenAI and Azure OpenAI URL formats.
+    The 'model' field in the request body is used as the Flowise flow ID.
+    """
     body: Dict[str, Any] = request.get_json(force=True)
+
+    # Extract flow_id from model field (or deployment_name for Azure)
+    flow_id = deployment_name or body.get("model")
+    if not flow_id:
+        return jsonify({"error": "model field is required (used as Flowise flow_id)"}), 400
 
     # Extract messages or prompt
     messages: List[Dict[str, Any]] = body.get("messages") or []
@@ -111,7 +130,7 @@ def chat_completions():
         history = []
 
     try:
-        client = get_client()
+        client = get_client(flow_id)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -127,19 +146,27 @@ def chat_completions():
 
 
 @app.route("/v1/completions", methods=["POST"])
-def completions():
+@app.route("/openai/deployments/<deployment_name>/completions", methods=["POST"])
+def completions(deployment_name=None):
     """Handle legacy OpenAI completion-style requests.
-
-    We'll accept `prompt` and map it to Flowise similarly.
+    
+    Supports both standard OpenAI and Azure OpenAI URL formats.
+    The 'model' field in the request body is used as the Flowise flow ID.
     """
     body: Dict[str, Any] = request.get_json(force=True)
+    
+    # Extract flow_id from model field (or deployment_name for Azure)
+    flow_id = deployment_name or body.get("model")
+    if not flow_id:
+        return jsonify({"error": "model field is required (used as Flowise flow_id)"}), 400
+    
     prompt = body.get("prompt") or body.get("input") or body.get("question")
     if isinstance(prompt, list):
         prompt = "\n".join(str(p) for p in prompt)
     prompt = str(prompt or "")
 
     try:
-        client = get_client()
+        client = get_client(flow_id)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -153,6 +180,9 @@ def completions():
 
 
 if __name__ == "__main__":
+    # Enable debug logging to see requests
+    logging.basicConfig(level=logging.DEBUG)
+    
     # Default host/port; change via env PORT
     port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
