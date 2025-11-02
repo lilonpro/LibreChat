@@ -138,3 +138,7 @@ helm/**/.values.yaml
 /.tabnine/
 /.codeium
 *.local.md
+
+# Python bytecode caches
+__pycache__/
+**/__pycache__/

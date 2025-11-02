@@ -4,14 +4,22 @@ Provides conversion helpers to translate an OpenAI-style completion request
 into a Flowise prediction request, and to translate a Flowise prediction
 response back into an OpenAI-style completion response.
 
-This is intentionally conservative: it maps common fields (prompt -> input,
-temperature, max_tokens, top_p, n) and returns a minimal, valid OpenAI
-completion response shape built from the Flowise outputs.
+This also provides a FlowiseClient class to interact with a Flowise server.
+
+Example:
+    client = FlowiseClient(
+        base_url="https://demo.flow.legaleagle-ai.com/api/v1",
+        flow_id="5518949f-3ebc-4082-af01-fa2a18623da6",
+        api_key="12345"
+    )
+    response = client.predict("What is the price for Apple?")
 """
 from typing import Any, Dict, List, Optional
 import time
 import json
 from pathlib import Path
+import requests
+from urllib.parse import urljoin
 
 
 def _merge_adjacent_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -302,8 +310,70 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
     return response
 
 
+class FlowiseClient:
+    """Client for interacting with a Flowise server."""
+    
+    def __init__(self, base_url: str, flow_id: str, api_key: str):
+        """Initialize the client.
+        
+        Args:
+            base_url: Base URL of the Flowise server (e.g., https://demo.flow.legaleagle-ai.com/api/v1)
+            flow_id: ID of the flow to use
+            api_key: API key for authentication
+        """
+        self.base_url = base_url.rstrip('/')
+        self.flow_id = flow_id
+        self.api_key = api_key
+        
+    def predict(self, question: str, history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Send a prediction request to the Flowise server.
+        
+        Args:
+            question: The question to ask
+            history: Optional chat history in OpenAI format
+            
+        Returns:
+            The OpenAI-formatted response
+        """
+        # Convert simple question into OpenAI request format
+        openai_req = {
+            "messages": [{"role": "user", "content": question}]
+        }
+        if history:
+            openai_req["messages"] = history + openai_req["messages"]
+            
+        # Convert to Flowise format
+        flowise_req = openai_to_flowise(openai_req)
+        
+        # Make request to Flowise server
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        
+        url = f"{self.base_url}/prediction/{self.flow_id}"
+        response = requests.post(url, json=flowise_req, headers=headers)
+        response.raise_for_status()  # Raise exception for failed requests
+        
+        # Convert Flowise response back to OpenAI format
+        flowise_resp = response.json()
+        return flowise_to_openai(flowise_resp, openai_req)
+
+
 if __name__ == "__main__":
-    # Load test inputs from JSON files
+    # Test the client if credentials are provided
+    test_client = False
+    if test_client:
+        client = FlowiseClient(
+            base_url="https://demo.flow.legaleagle-ai.com/api/v1",
+            flow_id="5518949f-3ebc-4082-af01-fa2a18623da6",
+            api_key="12345"  # Replace with actual API key
+        )
+        response = client.predict("What is the price for Apple?")
+        print("\nFlowise API Response:")
+        print(json.dumps(response, indent=2))
+    
+    # Load test inputs from JSON files for format conversion testing
     flowise_path = Path(__file__).parent / "flowise_raw.json"
     openai_path = Path(__file__).parent / "openai_raw.json"
     
