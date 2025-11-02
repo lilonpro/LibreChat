@@ -28,6 +28,7 @@ function createCloseHandler(abortController) {
 }
 
 const AgentController = async (req, res, next, initializeClient, addTitle) => {
+  console.log(req.body);
   let {
     text,
     isRegenerate,

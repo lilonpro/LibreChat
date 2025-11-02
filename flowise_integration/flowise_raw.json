@@ -1,0 +1,281 @@
+{
+    "text": "The price for Apple's stock (**AAPL.US**) is **$270.37** as of the latest closing data provided.",
+    "question": "What is the price for Apple?",
+    "chatId": "0fbaf16e-e2e9-4890-95d0-32d09edf3bde",
+    "chatMessageId": "39f1e6bd-a27b-447a-b481-8ffeb0063b11",
+    "executionId": "8a846b38-d96f-445f-b584-99cdb3541571",
+    "agentFlowExecutedData": [
+        {
+            "nodeId": "startAgentflow_0",
+            "nodeLabel": "Start",
+            "data": {
+                "id": "startAgentflow_0",
+                "name": "startAgentflow",
+                "input": {
+                    "question": "What is the price for Apple?"
+                },
+                "output": {
+                    "question": "What is the price for Apple?"
+                },
+                "state": {}
+            },
+            "previousNodeIds": [],
+            "status": "FINISHED"
+        },
+        {
+            "nodeId": "agentAgentflow_0",
+            "nodeLabel": "stock_code_agent",
+            "data": {
+                "id": "agentAgentflow_0",
+                "name": "agentAgentflow",
+                "input": {
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a stock agent who returns stock code based on user's question. return nothing but the stock code in lower case. For example for question \"Give me the stock price for Apple\" you would return \"aapl.us\""
+                        },
+                        {
+                            "role": "user",
+                            "content": "What is the price for Apple?"
+                        }
+                    ],
+                    "agentModel": "azureChatOpenAI",
+                    "agentTools": [],
+                    "agentEnableMemory": false,
+                    "agentReturnResponseAs": "assistantMessage",
+                    "agentModelConfig": {
+                        "cache": "",
+                        "modelName": "gpt-4o",
+                        "temperature": 0.9,
+                        "maxTokens": "",
+                        "streaming": true,
+                        "topP": "",
+                        "frequencyPenalty": "",
+                        "presencePenalty": "",
+                        "timeout": "",
+                        "basepath": "",
+                        "baseOptions": "",
+                        "allowImageUploads": "",
+                        "imageResolution": "low",
+                        "reasoning": "",
+                        "agentModel": "azureChatOpenAI"
+                    }
+                },
+                "output": {
+                    "content": "aapl.us",
+                    "timeMetadata": {
+                        "start": 1762052103675,
+                        "end": 1762052103875,
+                        "delta": 200
+                    },
+                    "calledTools": [],
+                    "usageMetadata": {
+                        "input_tokens": 63,
+                        "output_tokens": 4,
+                        "total_tokens": 67,
+                        "input_token_details": {
+                            "audio": 0,
+                            "cache_read": 0
+                        },
+                        "output_token_details": {
+                            "audio": 0,
+                            "reasoning": 0
+                        },
+                        "tool_call_tokens": 0
+                    },
+                    "responseMetadata": {
+                        "estimatedTokenUsage": {
+                            "promptTokens": 65,
+                            "completionTokens": 4,
+                            "totalTokens": 69
+                        },
+                        "prompt": 0,
+                        "completion": 0,
+                        "finish_reason": "stop",
+                        "system_fingerprint": "fp_b54fe76834",
+                        "model_name": "gpt-4o-2024-11-20",
+                        "usage": {
+                            "completion_tokens": 4,
+                            "completion_tokens_details": {
+                                "accepted_prediction_tokens": 0,
+                                "audio_tokens": 0,
+                                "reasoning_tokens": 0,
+                                "rejected_prediction_tokens": 0
+                            },
+                            "prompt_tokens": 63,
+                            "prompt_tokens_details": {
+                                "audio_tokens": 0,
+                                "cached_tokens": 0
+                            },
+                            "total_tokens": 67
+                        }
+                    }
+                },
+                "state": {},
+                "chatHistory": [
+                    {
+                        "role": "user",
+                        "content": "What is the price for Apple?"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "aapl.us",
+                        "name": "stock_code_agent"
+                    }
+                ]
+            },
+            "previousNodeIds": [
+                "startAgentflow_0"
+            ],
+            "status": "FINISHED"
+        },
+        {
+            "nodeId": "httpAgentflow_0",
+            "nodeLabel": "HTTP 0",
+            "data": {
+                "id": "httpAgentflow_0",
+                "name": "httpAgentflow",
+                "input": {
+                    "http": {
+                        "method": "GET",
+                        "url": "https://stooq.com/q/l/",
+                        "headers": "",
+                        "queryParams": [
+                            {
+                                "key": "e",
+                                "value": "json"
+                            },
+                            {
+                                "key": "s",
+                                "value": "aapl.us"
+                            }
+                        ],
+                        "bodyType": "",
+                        "responseType": "json"
+                    }
+                },
+                "output": {
+                    "http": {
+                        "data": "{\"symbols\":[{\"symbol\":\"AAPL.US\",\"date\":20251031,\"time\":\"210020\",\"open\":276.99,\"high\":277.32,\"low\":269.16,\"close\":270.37,\"volume\":86167123,\"openint\":}]}",
+                        "status": 200,
+                        "statusText": "OK",
+                        "headers": {
+                            "date": "Sun, 02 Nov 2025 02:55:04 GMT",
+                            "server": "Apache",
+                            "expires": "Sat, 1 Jan 2000 12:00:00 GMT",
+                            "last-modified": "Sun, 02 Nov 2025 03:55:04 GMT",
+                            "cache-control": "pre-check=0, post-check=0, max-age=0",
+                            "pragma": "no-cache",
+                            "connection": "close",
+                            "transfer-encoding": "chunked",
+                            "content-type": "application/json; charset=utf-8"
+                        }
+                    }
+                },
+                "state": {}
+            },
+            "previousNodeIds": [
+                "agentAgentflow_0"
+            ],
+            "status": "FINISHED"
+        },
+        {
+            "nodeId": "agentAgentflow_1",
+            "nodeLabel": "Agent 1",
+            "data": {
+                "id": "agentAgentflow_1",
+                "name": "agentAgentflow",
+                "input": {
+                    "messages": [
+                        {
+                            "role": "assistant",
+                            "content": "You are specialist to generate final answer to the conversation provided."
+                        },
+                        {
+                            "role": "user",
+                            "content": "Human: What is the price for Apple?\nAssistant: aapl.us {\"symbols\":[{\"symbol\":\"AAPL.US\",\"date\":20251031,\"time\":\"210020\",\"open\":276.99,\"high\":277.32,\"low\":269.16,\"close\":270.37,\"volume\":86167123,\"openint\":}]}"
+                        }
+                    ],
+                    "agentModel": "azureChatOpenAI",
+                    "agentEnableMemory": false,
+                    "agentReturnResponseAs": "assistantMessage",
+                    "agentModelConfig": {
+                        "cache": "",
+                        "modelName": "gpt-4o",
+                        "temperature": 0.9,
+                        "maxTokens": "",
+                        "streaming": true,
+                        "topP": "",
+                        "frequencyPenalty": "",
+                        "presencePenalty": "",
+                        "timeout": "",
+                        "basepath": "",
+                        "baseOptions": "",
+                        "allowImageUploads": "",
+                        "imageResolution": "low",
+                        "reasoning": "",
+                        "agentModel": "azureChatOpenAI"
+                    }
+                },
+                "output": {
+                    "content": "The price for Apple's stock (**AAPL.US**) is **$270.37** as of the latest closing data provided.",
+                    "timeMetadata": {
+                        "start": 1762052104326,
+                        "end": 1762052104699,
+                        "delta": 373
+                    },
+                    "calledTools": [],
+                    "usageMetadata": {
+                        "input_tokens": 93,
+                        "output_tokens": 26,
+                        "total_tokens": 119,
+                        "input_token_details": {
+                            "audio": 0,
+                            "cache_read": 0
+                        },
+                        "output_token_details": {
+                            "audio": 0,
+                            "reasoning": 0
+                        },
+                        "tool_call_tokens": 0
+                    },
+                    "responseMetadata": {
+                        "prompt": 0,
+                        "completion": 0,
+                        "usage": {
+                            "completion_tokens": 26,
+                            "completion_tokens_details": {
+                                "accepted_prediction_tokens": 0,
+                                "audio_tokens": 0,
+                                "reasoning_tokens": 0,
+                                "rejected_prediction_tokens": 0
+                            },
+                            "prompt_tokens": 93,
+                            "prompt_tokens_details": {
+                                "audio_tokens": 0,
+                                "cached_tokens": 0
+                            },
+                            "total_tokens": 119
+                        },
+                        "finish_reason": "stop",
+                        "system_fingerprint": "fp_b54fe76834",
+                        "model_name": "gpt-4o-2024-11-20"
+                    }
+                },
+                "state": {},
+                "chatHistory": [
+                    {
+                        "role": "assistant",
+                        "content": "The price for Apple's stock (**AAPL.US**) is **$270.37** as of the latest closing data provided.",
+                        "name": "agent_1"
+                    }
+                ]
+            },
+            "previousNodeIds": [
+                "httpAgentflow_0"
+            ],
+            "status": "FINISHED"
+        }
+    ],
+    "sessionId": "0fbaf16e-e2e9-4890-95d0-32d09edf3bde"
+}
