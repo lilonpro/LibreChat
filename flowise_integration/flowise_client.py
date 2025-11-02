@@ -14,7 +14,10 @@ Example:
 from typing import Any, Dict, List, Optional
 import os
 from pathlib import Path
+import logging
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from urllib.parse import urljoin
 import json
 
@@ -65,6 +68,19 @@ class FlowiseClient:
         self.api_key = api_key or os.getenv("FLOWISE_API_KEY")
         if not self.api_key:
             raise ValueError("Flowise API key not provided and FLOWISE_API_KEY not set in environment")
+
+        # Setup logging
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Setup a requests Session with retries to be resilient to transient errors
+        self.session = requests.Session()
+        retries = Retry(total=3, backoff_factor=0.5, status_forcelist=(502, 503, 504))
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
+        # Default request timeout (seconds)
+        self.timeout = int(os.getenv("FLOWISE_REQUEST_TIMEOUT", "30"))
         
     def predict(self, question: str, history: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """Send a prediction request to the Flowise server.
@@ -96,9 +112,14 @@ class FlowiseClient:
         }
         
         url = f"{self.base_url}/prediction/{self.flow_id}"
-        response = requests.post(url, json=flowise_req, headers=headers)
-        response.raise_for_status()  # Raise exception for failed requests
-        
+        try:
+            self.logger.debug("POST %s payload=%s", url, flowise_req)
+            response = self.session.post(url, json=flowise_req, headers=headers, timeout=self.timeout)
+            response.raise_for_status()  # Raise exception for failed requests
+        except requests.exceptions.RequestException as e:
+            self.logger.exception("Flowise request failed: %s", e)
+            raise
+
         # Convert Flowise response back to OpenAI format
         flowise_resp = response.json()
         return flowise_to_openai(flowise_resp, openai_req)
