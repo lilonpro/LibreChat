@@ -374,8 +374,8 @@ if __name__ == "__main__":
         print(json.dumps(response, indent=2))
     
     # Load test inputs from JSON files for format conversion testing
-    flowise_path = Path(__file__).parent / "flowise_raw.json"
-    openai_path = Path(__file__).parent / "openai_raw.json"
+    flowise_path = Path(__file__).parent / "sample_payload" / "flowise_raw.json"
+    openai_path = Path(__file__).parent / "sample_payload" / "openai_raw.json"
     
     try:
         with open(flowise_path, "r", encoding="utf-8") as f:
