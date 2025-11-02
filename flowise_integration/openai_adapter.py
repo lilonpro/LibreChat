@@ -186,16 +186,16 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
 
 if __name__ == "__main__":
     # Quick example usage
-    # example_openai = {
-    #     "model": "gpt-test",
-    #     "prompt": "Say hello",
-    #     "max_tokens": 16,
-    #     "temperature": 0.7,
-    #     "n": 2,
-    # }
+    example_openai = {
+        "model": "gpt-test",
+        "prompt": "Say hello",
+        "max_tokens": 16,
+        "temperature": 0.7,
+        "n": 2,
+    }
 
-    # req = openai_to_flowise(example_openai)
-    # print("Flowise request:\n", req)
+    req = openai_to_flowise(example_openai)
+    print("Flowise request:\n", req)
 
     # Try loading a saved Flowise response for testing
     json_path = Path(__file__).parent / "flowise_raw.json"
