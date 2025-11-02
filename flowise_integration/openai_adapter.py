@@ -84,30 +84,55 @@ def openai_to_flowise(openai_req: Dict[str, Any]) -> Dict[str, Any]:
     n = openai_req.get("n", 1)
     stop = openai_req.get("stop")
 
-    # Assemble Flowise-style request. Many Flowise setups accept an "input"
-    # or "inputs" field. Use `inputs` as a dict with 'text' by default.
+    # Assemble Flowise-style request based on the documented format
     flowise_req: Dict[str, Any] = {
-        "inputs": {"text": prompt},
-        "parameters": {},
+        "question": prompt,  # Main input field is 'question'
+        "history": [],      # Initialize empty history
+        "streaming": False, # Default to non-streaming mode
+        "overrideConfig": {}  # Initialize overrideConfig for parameters
     }
 
-    params: Dict[str, Any] = flowise_req["parameters"]
+    # Add chat history if present (either from messages or history field)
+    if "messages" in openai_req:
+        hist = _merge_adjacent_history(openai_req["messages"])
+        # Convert OpenAI roles to Flowise roles (user -> userMessage, assistant -> apiMessage)
+        flowise_req["history"] = [
+            {"role": "userMessage" if m["role"] == "user" else "apiMessage", 
+             "content": m["content"]} 
+            for m in hist
+        ]
+    elif "history" in openai_req:
+        hist = _merge_adjacent_history(openai_req["history"])
+        flowise_req["history"] = [
+            {"role": "userMessage" if m["role"] == "user" else "apiMessage", 
+             "content": m["content"]} 
+            for m in hist
+        ]
+
+    # Map parameters to overrideConfig
+    # Map parameters to overrideConfig with correct names
+    params: Dict[str, Any] = flowise_req["overrideConfig"]
     if temperature is not None:
         params["temperature"] = float(temperature)
-    if top_p is not None:
-        params["top_p"] = float(top_p)
     if max_tokens is not None:
-        params["max_tokens"] = int(max_tokens)
-    # Flowise may use `num_return_sequences` or `n`. Provide both aliases.
-    params["n"] = int(n)
-    params["num_return_sequences"] = int(n)
-    if stop is not None:
-        params["stop"] = stop
-
-    # Attach model value if provided (Flowise node or model id). This is optional
-    model = openai_req.get("model")
-    if model:
-        flowise_req["model"] = model
+        params["maxTokens"] = int(max_tokens)
+    
+    # Session ID is required - generate one if not provided
+    params["sessionId"] = openai_req.get("sessionId", f"session-{int(time.time()*1000)}")
+    
+    # Optional form data
+    if "form" in openai_req:
+        flowise_req["form"] = openai_req["form"]
+    else:
+        flowise_req["form"] = {"count": n}  # Use n as count in form
+        
+    # Uploads field (if present)
+    if "uploads" in openai_req:
+        flowise_req["uploads"] = openai_req["uploads"]
+        
+    # Human input field (if present)
+    if "humanInput" in openai_req:
+        flowise_req["humanInput"] = openai_req["humanInput"]
 
     return flowise_req
 
