@@ -148,6 +148,11 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
     if not raw_outputs:
         raw_outputs = [""]
 
+    # Determine if caller expects chat-style messages (OpenAI Chat API)
+    chat_mode = False
+    if openai_req and ("messages" in openai_req or "history" in openai_req):
+        chat_mode = True
+
     # Build choices according to requested `n` if available
     n = 1
     if openai_req:
@@ -163,7 +168,19 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
             text = raw_outputs[i]
         else:
             text = raw_outputs[0]
-        choices.append(_build_choice(text, index=i, finish_reason="stop"))
+
+        if chat_mode:
+            # ChatCompletion-style choice with a message object
+            choice = {
+                "index": i,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": "stop",
+            }
+            # keep compatibility: also include text field
+            choice["text"] = text
+            choices.append(choice)
+        else:
+            choices.append(_build_choice(text, index=i, finish_reason="stop"))
 
     # Minimal usage: tokens not known from Flowise; set to None or estimates
     usage = {
@@ -174,12 +191,44 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
 
     response = {
         "id": f"flowise-{int(time.time()*1000)}",
-        "object": "text_completion",
+        "object": "text_completion" if not chat_mode else "chat.completion",
         "created": created,
         "model": model,
         "choices": choices,
         "usage": usage,
     }
+
+    # If chat_mode, include the conversation history for convenience
+    if chat_mode:
+        conv: List[Dict[str, Any]] = []
+        # Prefer explicit messages passed in the original request
+        if openai_req and "messages" in openai_req:
+            conv = list(openai_req["messages"])
+        else:
+            # Try to extract chatHistory from flowise response nodes
+            if isinstance(flowise_resp, dict):
+                # Search agentFlowExecutedData for chatHistory arrays
+                afd = flowise_resp.get("agentFlowExecutedData") or []
+                for node in afd:
+                    data = node.get("data", {})
+                    ch = data.get("chatHistory")
+                    if isinstance(ch, list):
+                        for m in ch:
+                            # normalize to role/content
+                            role = m.get("role") if isinstance(m, dict) else None
+                            content = m.get("content") if isinstance(m, dict) else str(m)
+                            if role and content is not None:
+                                conv.append({"role": role, "content": content})
+        # Append assistant final message(s) from choices
+        if choices:
+            # take first choice's text/message
+            first = choices[0]
+            if "message" in first:
+                conv.append({"role": "assistant", "content": first["message"]["content"]})
+            elif "text" in first:
+                conv.append({"role": "assistant", "content": first["text"]})
+
+        response["conversation"] = conv
 
     return response
 
@@ -210,16 +259,55 @@ if __name__ == "__main__":
     else:
         # Fallback sample
         flowise_resp = {"outputs": ["Hello!", "Hi there!"]}
+    # Build a sample OpenAI completion-style request that includes the question
+    # and conversation history from the Flowise response. This demonstrates
+    # sending both `prompt` and a `history` field (adapter will read `history`).
+    example_openai = {
+        "model": "gpt-test",
+        "prompt": flowise_resp.get("question") or flowise_resp.get("text") or "",
+        "n": 1,
+    }
 
-    # Ensure example_openai exists (some editors may have commented it out).
-    if "example_openai" not in globals():
-        example_openai = {
-            "model": "gpt-test",
-            "prompt": "Say hello",
-            "max_tokens": 16,
-            "temperature": 0.7,
-            "n": 1,
-        }
+    # Extract chatHistory from agentFlowExecutedData nodes and attach as `history`.
+    history_msgs: List[Dict[str, Any]] = []
+    if isinstance(flowise_resp, dict):
+        afd = flowise_resp.get("agentFlowExecutedData") or []
+        for node in afd:
+            data = node.get("data", {})
+            ch = data.get("chatHistory")
+            if isinstance(ch, list):
+                for m in ch:
+                    if isinstance(m, dict) and "role" in m and "content" in m:
+                        history_msgs.append({"role": m["role"], "content": m["content"]})
 
-    oa = flowise_to_openai(flowise_resp, example_openai)
+    if history_msgs:
+        example_openai["history"] = history_msgs
+
+    print("OpenAI completion sample request (prompt + history):\n", example_openai)
+
+    # Save the sample request to openai_raw.json for repeatable testing,
+    # then load it back and use the loaded file as the simulated request.
+    openai_json_path = Path(__file__).parent / "openai_raw.json"
+    try:
+        with open(openai_json_path, "w", encoding="utf-8") as fo:
+            json.dump(example_openai, fo, ensure_ascii=False, indent=2)
+        print(f"Saved sample OpenAI request to {openai_json_path}")
+    except Exception as e:
+        print(f"Failed to save sample OpenAI request to {openai_json_path}: {e}")
+
+    # Load back the saved request to ensure file-based testing is used
+    try:
+        with open(openai_json_path, "r", encoding="utf-8") as fi:
+            loaded_openai_req = json.load(fi)
+        print(f"Loaded OpenAI sample request from {openai_json_path}")
+    except Exception as e:
+        print(f"Failed to load {openai_json_path}: {e}")
+        loaded_openai_req = example_openai
+
+    # Convert the loaded OpenAI request to Flowise request shape and print
+    req = openai_to_flowise(loaded_openai_req)
+    print("Flowise request (from sample file):\n", req)
+
+    # Convert Flowise response back into an OpenAI-style response using the loaded sample
+    oa = flowise_to_openai(flowise_resp, loaded_openai_req)
     print("OpenAI-style response:\n", oa)
