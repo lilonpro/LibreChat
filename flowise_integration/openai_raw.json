@@ -9,11 +9,7 @@
     },
     {
       "role": "assistant",
-      "content": "aapl.us"
-    },
-    {
-      "role": "assistant",
-      "content": "The price for Apple's stock (**AAPL.US**) is **$270.37** as of the latest closing data provided."
+      "content": "aapl.us\nThe price for Apple's stock (**AAPL.US**) is **$270.37** as of the latest closing data provided."
     }
   ]
 }

@@ -14,6 +14,43 @@ import json
 from pathlib import Path
 
 
+def _merge_adjacent_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge adjacent messages with the same role into a single message.
+
+    Concatenates `content` with a newline between messages. Preserves an
+    optional `name` field: if merged entry lacks name and a subsequent
+    message has a name, that name will be added.
+    """
+    if not messages:
+        return []
+    merged: List[Dict[str, Any]] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            # normalize non-dict entries
+            m = {"role": None, "content": str(m)}
+        role = m.get("role")
+        content = m.get("content", "")
+        name = m.get("name")
+
+        if merged and merged[-1].get("role") == role:
+            # join contents
+            prev = merged[-1]
+            prev_content = prev.get("content", "")
+            if prev_content:
+                prev["content"] = prev_content + "\n" + content
+            else:
+                prev["content"] = content
+            # prefer existing name, but fill if missing
+            if not prev.get("name") and name:
+                prev["name"] = name
+        else:
+            entry: Dict[str, Any] = {"role": role, "content": content}
+            if name:
+                entry["name"] = name
+            merged.append(entry)
+    return merged
+
+
 def openai_to_flowise(openai_req: Dict[str, Any]) -> Dict[str, Any]:
     """Convert an OpenAI completion request dict to a Flowise prediction request.
 
@@ -203,7 +240,7 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
         conv: List[Dict[str, Any]] = []
         # Prefer explicit messages passed in the original request
         if openai_req and "messages" in openai_req:
-            conv = list(openai_req["messages"])
+            conv = _merge_adjacent_history(list(openai_req["messages"]))
         else:
             # Try to extract chatHistory from flowise response nodes
             if isinstance(flowise_resp, dict):
@@ -213,21 +250,28 @@ def flowise_to_openai(flowise_resp: Dict[str, Any], openai_req: Optional[Dict[st
                     data = node.get("data", {})
                     ch = data.get("chatHistory")
                     if isinstance(ch, list):
+                        # merge node-level chatHistory entries before appending
+                        node_msgs: List[Dict[str, Any]] = []
                         for m in ch:
-                            # normalize to role/content
-                            role = m.get("role") if isinstance(m, dict) else None
-                            content = m.get("content") if isinstance(m, dict) else str(m)
-                            if role and content is not None:
-                                conv.append({"role": role, "content": content})
+                            if isinstance(m, dict) and "role" in m and "content" in m:
+                                node_msgs.append({"role": m["role"], "content": m["content"], **({"name": m.get("name")} if m.get("name") else {})})
+                        node_msgs = _merge_adjacent_history(node_msgs)
+                        for nm in node_msgs:
+                            conv.append(nm)
         # Append assistant final message(s) from choices
         if choices:
             # take first choice's text/message
             first = choices[0]
+            assistant_entry = None
             if "message" in first:
-                conv.append({"role": "assistant", "content": first["message"]["content"]})
+                assistant_entry = {"role": "assistant", "content": first["message"]["content"]}
             elif "text" in first:
-                conv.append({"role": "assistant", "content": first["text"]})
+                assistant_entry = {"role": "assistant", "content": first["text"]}
+            if assistant_entry:
+                conv.append(assistant_entry)
 
+        # Merge adjacent entries in the assembled conversation
+        conv = _merge_adjacent_history(conv)
         response["conversation"] = conv
 
     return response
@@ -281,7 +325,7 @@ if __name__ == "__main__":
                         history_msgs.append({"role": m["role"], "content": m["content"]})
 
     if history_msgs:
-        example_openai["history"] = history_msgs
+        example_openai["history"] = _merge_adjacent_history(history_msgs)
 
     print("OpenAI completion sample request (prompt + history):\n", example_openai)
 
