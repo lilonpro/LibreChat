@@ -12,35 +12,7 @@ The integration provides:
 
 ## Architecture
 
-```
-┌─────────────────┐
-│  OpenAI Client  │ (e.g., Azure OpenAI SDK, curl)
-│   (any tool)    │
-└────────┬────────┘
-         │ OpenAI format
-         ▼
-┌─────────────────────────┐
-│ openai_compatible_server│ (Flask server at :8000)
-│        .py              │
-└────────┬────────────────┘
-         │ converts format
-         ▼
-┌─────────────────────┐
-│  openai_adapter.py  │ (format conversion)
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ flowise_client  │ (HTTP client)
-│      .py        │
-└────────┬────────┘
-         │ Flowise format
-         ▼
-┌─────────────────┐
-│  Flowise API    │ (your Flowise server)
-│  /prediction/   │
-└─────────────────┘
-```
+![Architecture](librechat_flowise.drawio.png)
 
 ## Files
 
