@@ -16,8 +16,10 @@ timeouts, retries, authentication, and streaming support as needed.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
-from flask import Flask, request, jsonify
+import time
+import json
+from typing import Any, Dict, List, Optional, Iterable, Callable
+from flask import Flask, request, jsonify, Response
 
 from flowise_client import FlowiseClient
 from openai_adapter import openai_to_flowise, flowise_to_openai
@@ -99,12 +101,14 @@ def health():
 @app.route("/v1/chat/completions", methods=["POST"])
 @app.route("/openai/deployments/<deployment_name>/chat/completions", methods=["POST"])
 def chat_completions(deployment_name=None):
-    """Handle OpenAI ChatCompletion-style requests and return an OpenAI-compatible response.
-    
+    """Handle OpenAI ChatCompletion-style requests.
+
     Supports both standard OpenAI and Azure OpenAI URL formats.
-    The 'model' field in the request body is used as the Flowise flow ID.
+    If request body includes "stream": true, returns Server-Sent Events (SSE)
+    with OpenAI-compatible incremental chunks (chat.completion.chunk).
     """
     body: Dict[str, Any] = request.get_json(force=True)
+    stream_requested = bool(body.get("stream"))
 
     # Extract flow_id from model field (or deployment_name for Azure)
     flow_id = deployment_name or body.get("model")
@@ -114,14 +118,11 @@ def chat_completions(deployment_name=None):
     # Extract messages or prompt
     messages: List[Dict[str, Any]] = body.get("messages") or []
 
-    # If messages present, pick the last user message as question and keep preceding messages as history
     if messages:
-        # Find last message index (use last element)
         last = messages[-1]
         question = last.get("content") if isinstance(last, dict) else str(last)
         history = messages[:-1]
     else:
-        # Fallback to prompt or input
         prompt = body.get("prompt") or body.get("input") or body.get("question")
         if isinstance(prompt, list):
             question = "\n".join(str(p) for p in prompt)
@@ -134,32 +135,133 @@ def chat_completions(deployment_name=None):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Convert history into OpenAI messages list expected by FlowiseClient
-    # FlowiseClient.predict expects a history list in OpenAI format
     try:
         resp = client.predict(question=question, history=history)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # resp should already be OpenAI-compatible because flowise_to_openai returns that shape
-    return jsonify(resp)
+    if not stream_requested:
+        return jsonify(resp)
+
+    # Streaming mode: break assistant content into chunks and emit SSE frames
+    # OpenAI streaming spec: each line begins with 'data: ' + JSON, terminated by blank line.
+    # Final line: data: [DONE]
+    assistant_msg = ""
+    try:
+        # Chat mode response shape ensures choices[0].message.content
+        assistant_msg = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception:
+        assistant_msg = ""
+
+    model_name = resp.get("model", flow_id)
+    base_id = resp.get("id", f"flowise-{int(time.time()*1000)}")
+
+    def sse_chat_generator() -> Iterable[str]:
+        created = int(time.time())
+        # First chunk: role only (optional content if desired)
+        first_chunk = {
+            "id": base_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model_name,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant"},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        yield f"data: {json.dumps(first_chunk, ensure_ascii=False)}\n\n"
+
+        # Tokenize content naïvely by splitting on whitespace while preserving it.
+        # This keeps things simple; adjust if token granularity needed.
+        if assistant_msg:
+            # Reconstruct with spaces as separate chunks to preserve formatting
+            import re
+            pieces = re.findall(r"\S+|\s+", assistant_msg)
+            buffer = []
+            max_chunk_chars = 50  # group tokens to reduce SSE overhead
+            for piece in pieces:
+                buffer.append(piece)
+                if sum(len(p) for p in buffer) >= max_chunk_chars:
+                    content_chunk = "".join(buffer)
+                    buffer.clear()
+                    chunk = {
+                        "id": base_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": model_name,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": content_chunk},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            # Flush remaining buffer
+            if buffer:
+                content_chunk = "".join(buffer)
+                chunk = {
+                    "id": base_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model_name,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": content_chunk},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+        # Final chunk with finish_reason
+        final_chunk = {
+            "id": base_id,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model_name,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return Response(
+        sse_chat_generator(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/v1/completions", methods=["POST"])
 @app.route("/openai/deployments/<deployment_name>/completions", methods=["POST"])
 def completions(deployment_name=None):
     """Handle legacy OpenAI completion-style requests.
-    
-    Supports both standard OpenAI and Azure OpenAI URL formats.
-    The 'model' field in the request body is used as the Flowise flow ID.
+
+    If request body includes "stream": true, emits SSE streaming chunks similar
+    to OpenAI completions streaming semantics.
     """
     body: Dict[str, Any] = request.get_json(force=True)
-    
-    # Extract flow_id from model field (or deployment_name for Azure)
+    stream_requested = bool(body.get("stream"))
+
     flow_id = deployment_name or body.get("model")
     if not flow_id:
         return jsonify({"error": "model field is required (used as Flowise flow_id)"}), 400
-    
+
     prompt = body.get("prompt") or body.get("input") or body.get("question")
     if isinstance(prompt, list):
         prompt = "\n".join(str(p) for p in prompt)
@@ -171,12 +273,94 @@ def completions(deployment_name=None):
         return jsonify({"error": str(e)}), 500
 
     try:
-        # For completion endpoint, we pass prompt as a single user message
         resp = client.predict(question=prompt, history=[])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    return jsonify(resp)
+    if not stream_requested:
+        return jsonify(resp)
+
+    # Gather completion text
+    completion_text = ""
+    try:
+        completion_text = resp.get("choices", [{}])[0].get("text", "") or resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception:
+        completion_text = ""
+
+    model_name = resp.get("model", flow_id)
+    base_id = resp.get("id", f"flowise-{int(time.time()*1000)}")
+
+    def sse_completion_generator() -> Iterable[str]:
+        created = int(time.time())
+        # Stream text in grouped chunks
+        import re
+        pieces = re.findall(r"\S+|\s+", completion_text)
+        buffer = []
+        max_chunk_chars = 50
+        for piece in pieces:
+            buffer.append(piece)
+            if sum(len(p) for p in buffer) >= max_chunk_chars:
+                content_chunk = "".join(buffer)
+                buffer.clear()
+                chunk = {
+                    "id": base_id,
+                    "object": "text_completion",
+                    "created": int(time.time()),
+                    "model": model_name,
+                    "choices": [
+                        {
+                            "text": content_chunk,
+                            "index": 0,
+                            "logprobs": None,
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        if buffer:
+            content_chunk = "".join(buffer)
+            chunk = {
+                "id": base_id,
+                "object": "text_completion",
+                "created": int(time.time()),
+                "model": model_name,
+                "choices": [
+                    {
+                        "text": content_chunk,
+                        "index": 0,
+                        "logprobs": None,
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+        final_chunk = {
+            "id": base_id,
+            "object": "text_completion",
+            "created": int(time.time()),
+            "model": model_name,
+            "choices": [
+                {
+                    "text": "",
+                    "index": 0,
+                    "logprobs": None,
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return Response(
+        sse_completion_generator(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 if __name__ == "__main__":

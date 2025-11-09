@@ -75,6 +75,17 @@ response = client.chat.completions.create(
 )
 
 print(response.choices[0].message.content)
+\n+# Streaming example
+stream = client.chat.completions.create(
+  model="5518949f-3ebc-4082-af01-fa2a18623da6",
+  messages=[{"role": "user", "content": "Write a haiku about mountains"}],
+  stream=True
+)
+for chunk in stream:
+  if chunk.choices and chunk.choices[0].delta and getattr(chunk.choices[0].delta, "content", None):
+    print(chunk.choices[0].delta.content, end="")
+  if chunk.choices and chunk.choices[0].finish_reason:
+    print("\n[FINISH]", chunk.choices[0].finish_reason)
 ```
 
 ### Using curl
@@ -87,6 +98,34 @@ curl http://localhost:8000/v1/chat/completions \
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```
+
+#### Streaming (Server-Sent Events)
+Add `"stream": true` to receive incremental chunks following the OpenAI SSE spec:
+
+```bash
+curl -N http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "5518949f-3ebc-4082-af01-fa2a18623da6",
+    "messages": [{"role": "user", "content": "Tell me a short story about a fox."}],
+    "stream": true
+  }'
+```
+
+Sample output (truncated):
+```
+data: {"id":"flowise-1731060000000","object":"chat.completion.chunk","created":1731060000,"model":"5518949f-3ebc-4082-af01-fa2a18623da6","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"flowise-1731060000000","object":"chat.completion.chunk","created":1731060000,"model":"5518949f-3ebc-4082-af01-fa2a18623da6","choices":[{"index":0,"delta":{"content":"Once upon a"},"finish_reason":null}]}
+
+...
+
+data: {"id":"flowise-1731060000000","object":"chat.completion.chunk","created":1731060001,"model":"5518949f-3ebc-4082-af01-fa2a18623da6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+For legacy completions streaming, use `/v1/completions` with `"stream": true` and parse similar `data:` lines with `object: "text_completion"`.
 
 ### Using FlowiseClient Directly
 
