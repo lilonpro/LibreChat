@@ -53,6 +53,38 @@ python3 openai_compatible_server.py
 The server will start on `http://localhost:8000` (configurable via `PORT` env var).
 
 ## Usage
+### Use in Librechat
+To use a flow in Librechat
+```
+endpoints:
+  azureOpenAI:
+    titleModel: "gpt-4o"
+    plugins: false
+    groups:
+      - group: "azure-openai"
+        apiKey: "0c9********"
+        instanceName: "easyorder"
+        version: "2024-12-01-preview"
+        models:
+          gpt-4o:
+            deploymentName: gpt-4o
+            version: "2024-12-01-preview"
+
+  custom:
+    - name: "Flowise Local"
+      # type: "openai" 
+      apiKey: "none"                          # or "user_provided" or your key
+      baseURL: "http://localhost:8000/v1"
+      models:
+        default: ["5518949f-3ebc-4082-af01-fa2a18623da6"]
+        fetch: false                          # Flowise /v1/models is optional / non-standard
+        stream: false
+      titleConvo: true
+      titleModel: "5518949f-3ebc-4082-af01-fa2a18623da6"
+      summarize: false
+      forcePrompt: false
+      modelDisplayLabel: "Flowise Local"
+```
 
 ### Using OpenAI SDK
 
