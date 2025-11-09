@@ -53,7 +53,7 @@ python3 openai_compatible_server.py
 The server will start on `http://localhost:8000` (configurable via `PORT` env var).
 
 ## Usage
-### Use in Librechat
+### Use in Librechat add endpoint in `librechat.yaml`
 To use a flow in Librechat
 ```
 endpoints:
